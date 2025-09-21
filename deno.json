@@ -1,0 +1,34 @@
+{
+  "name": "@mixitone/pgmq-worker",
+  "version": "0.0.1",
+  "exports": {
+    ".": "./src/mod.ts"
+  },
+  "imports": {
+    "zod": "jsr:@zod/zod@4.1.11",
+    "postgres": "npm:postgres@3.4.7",
+    "poolifier": "jsr:@poolifier/poolifier-web-worker@0.5.14"
+  },
+  "compilerOptions": {
+    "strict": true
+  },
+  "fmt": {
+    "files": {
+      "include": ["src/"]
+    }
+  },
+  "lint": {
+    "files": {
+      "include": ["src/"]
+    },
+    "rules": {
+      "tags": ["recommended"]
+    }
+  },
+  "tasks": {
+    "test": "deno test",
+    "fmt": "deno fmt",
+    "lint": "deno lint",
+    "check": "deno check src/mod.ts"
+  }
+}
