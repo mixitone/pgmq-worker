@@ -5,7 +5,7 @@ export interface RawPgmqMessage {
   read_ct: number;
   enqueued_at: string;
   vt: string;
-  payload: unknown;
+  message: unknown;
 }
 
 export interface Task {

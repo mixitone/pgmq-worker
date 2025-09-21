@@ -3,6 +3,7 @@ import { PgmqMessage } from "../pgmq/PgmqMessage.ts";
 import { Task } from "../types/types.ts";
 import postgres from "postgres";
 import { WorkerOptions } from "./WorkerOptions.ts";
+import { ThreadWorker } from "poolifier";
 
 export interface WorkerContext {
   sql: postgres.Sql;
@@ -15,17 +16,16 @@ export interface QueueHandler<T> {
 export class HandlerError extends Error {}
 
 export async function processMessage(
+  importPath: string,
   pgmqMessage: PgmqMessage<unknown>,
   sql: postgres.Sql
 ): Promise<void> {
   const queueName = pgmqMessage.queueName;
 
-  // Sanitize queue name for valid filename (spaces and dashes to underscores)
-  const sanitizedQueueName = queueName.replace(/\s\-/g, "_");
   // Dynamically load the queue handler
   let handlerModule;
   try {
-    handlerModule = await import(`../queues/${sanitizedQueueName}.ts`);
+    handlerModule = await import(importPath);
   } catch (e) {
     throw new HandlerError(
       `Failed to load handler for queue ${queueName}: ${(e as Error).message}`,
@@ -61,9 +61,17 @@ export async function processMessage(
   }
 }
 
+function getImportPath(queueName: string, queuesPath?: string) {
+  // Sanitize queue name for valid filename (spaces and dashes to underscores)
+  const sanitizedQueueName = queueName.replace(/\s\-/g, "_");
+  return queuesPath
+    ? `${queuesPath}/${sanitizedQueueName}.ts`
+    : `${Deno.cwd()}/queues/${sanitizedQueueName}.ts`;
+}
+
 export function createWorker(
   options: WorkerOptions
-): (task: Task | undefined) => Promise<void> {
+): ThreadWorker<Task, Promise<void>> {
   const sql =
     typeof options.connection === "string"
       ? postgres(options.connection)
@@ -74,13 +82,14 @@ export function createWorker(
 
     const pgmq = new Pgmq(sql, task.queueName, {});
     const pgmqMessage = new PgmqMessage<unknown>(pgmq, task.message);
+    let importPath = getImportPath(task.queueName, options.queuesPath);
 
     if (options.onBeforeProcess) {
-      await options.onBeforeProcess(pgmqMessage);
+      importPath = await options.onBeforeProcess({ pgmqMessage, importPath });
     }
     let result;
     try {
-      result = await processMessage(pgmqMessage, sql);
+      result = await processMessage(importPath, pgmqMessage, sql);
     } catch (e) {
       if (e instanceof HandlerError) {
         if ("preventDefault" in e && typeof e.preventDefault === "function")
@@ -106,5 +115,5 @@ export function createWorker(
     return result;
   }
 
-  return enhancedProcess;
+  return new ThreadWorker(enhancedProcess);
 }

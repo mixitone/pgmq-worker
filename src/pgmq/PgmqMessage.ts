@@ -29,7 +29,7 @@ export class PgmqMessage<T> {
   }
 
   get payload(): T {
-    return this.data.payload as T;
+    return this.data.message as T;
   }
 
   async delete(): Promise<void> {

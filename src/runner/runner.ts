@@ -35,6 +35,7 @@ export async function startQueueRunner(options: QueueRunnerOptions) {
     },
     restartWorkerOnError: true,
     enableEvents: true,
+    startWorkers: true,
     enableTasksQueue: true,
     tasksQueueOptions: {
       size: POOL_SIZE,
@@ -49,6 +50,18 @@ export async function startQueueRunner(options: QueueRunnerOptions) {
   });
   pool.eventTarget?.addEventListener(PoolEvents.busyEnd, () => {
     busy = false;
+  });
+
+  await new Promise((resolve) => {
+    const abortController = new AbortController();
+    pool.eventTarget?.addEventListener(
+      PoolEvents.ready,
+      () => {
+        resolve(void 0);
+        abortController.abort();
+      },
+      { signal: abortController.signal }
+    );
   });
 
   // Handle shutdown signals for graceful termination
@@ -99,7 +112,7 @@ export async function startQueueRunner(options: QueueRunnerOptions) {
               console.log(
                 `Archived invalid message ${message.msg_id} from queue ${queueName}:`,
                 error,
-                JSON.stringify(message.payload)
+                JSON.stringify(message.message)
               );
             }
           },

@@ -56,10 +56,10 @@ export class Pgmq<S extends z.ZodTypeAny | undefined = undefined> {
 
     for (const rawMessage of rawMessages) {
       if ("schema" in this.options) {
-        const message = this.options.schema.safeParse(rawMessage.payload);
+        const message = this.options.schema.safeParse(rawMessage.message);
         if (message.success) {
           messages.push(
-            new PgmqMessage<T>(this, { ...rawMessage, payload: message.data })
+            new PgmqMessage<T>(this, { ...rawMessage, message: message.data })
           );
         } else if (this.options.onInvalid) {
           // Automatically archive invalid messages
