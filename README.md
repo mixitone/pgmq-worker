@@ -4,6 +4,13 @@ A worker runtime for Deno and [pgmq](https://pgmq.github.io/pgmq/), providing ba
 job processing with worker pools, message schemas, and graceful shutdown
 handling.
 
+## Why?
+
+Supabase offers pgmq for hosting queues in with similar semantics to SQS.
+However, they don't have a way to host long running background tasks. This
+package provides a simple runtime that you can easily deploy to your own
+hosting.
+
 ## Features
 
 - **Message Queue Processing**: Built on top of PGMQ for reliable message queuing
@@ -241,3 +248,53 @@ export default createWorker({ connection });
 ```
 
 Note that the runner and each worker will have a connection to postgres. The number of postgres connections will be N+1 where N is the poolSize (defaults to 1) given to startQueueRunner.
+
+## Deploying
+
+Now that you've defined your queues and processing code, you can deploy this out with docker very easily.
+
+Create a `Dockerfile`:
+
+```Dockerfile
+FROM denoland/deno:latest
+
+# Create working directory
+WORKDIR /app
+
+# Copy source
+COPY . .
+
+# Compile the main app
+RUN deno cache main.ts
+# Compile the worker app
+RUN deno cache custom-worker.ts
+RUN deno cache queues/*.ts
+
+# Run the app
+CMD ["deno", "run", "--allow-all", "main.ts"]
+```
+
+```bash
+docker build . -t my/workers
+docker run my/workers
+```
+
+As external references, like the database connection string, are controlled by your own main.ts file supporting a different environment would work like this:
+
+Update `main.ts`
+
+```typescript
+import { startQueueRunner } from "jsr:@mixitone/pgmq-worker@0.1.0";
+
+await startQueueRunner({
+  connection: Deno.env.get("DATABASE_URL"),
+  queues: ["my_queue"],
+  onReady: () => {
+    console.log("Ready to process messages");
+  },
+});
+```
+
+```bash
+docker run -e DATABASE_URL=postgres://connection_url my/workers
+```
