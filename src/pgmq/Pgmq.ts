@@ -23,6 +23,7 @@ export type PgmqOptions<S extends z.ZodTypeAny | undefined> =
 export class SchemaError extends Error {
   constructor(public queueName: string, public errors: z.ZodError) {
     super("Message schema validation failed for queue: " + queueName);
+    this.name = "SchemaError";
     this.cause = errors;
   }
 }
