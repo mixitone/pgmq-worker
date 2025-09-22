@@ -12,6 +12,8 @@ handling.
 
 ## Quick Start
 
+Install from [jsr](https://jsr.io/@mixitone/pgmq-worker)
+
 ### Basic Setup
 
 Create a pgmq queue:
