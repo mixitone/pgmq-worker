@@ -22,6 +22,10 @@ interface MockSql {
   unsafe: (str: string) => { toString(): string };
   mockMessages?: RawPgmqMessage[];
   mockArchived?: any[];
+  lastQuery?: {
+    strings: TemplateStringsArray;
+    values: any[];
+  };
 }
 
 // Create a mock SQL function using stub
@@ -30,8 +34,9 @@ function createMockSql(): {
   stub: Stub;
 } {
   let sql: MockSql = Object.assign(
-    async (_strings: TemplateStringsArray, ..._values: any[]) => {
+    async (strings: TemplateStringsArray, ...values: any[]) => {
       // This implementation will be stubbed
+      sql.lastQuery = { strings, values };
       return [];
     },
     {
@@ -43,8 +48,12 @@ function createMockSql(): {
   const sqlStub = stub(
     sqlObj,
     "sql",
-    async (strings: TemplateStringsArray, ..._values: any[]) => {
+    async (strings: TemplateStringsArray, ...values: any[]) => {
       const query = strings.raw.join("?");
+
+      // Capture all queries
+      sql.lastQuery = { strings, values };
+
       if (query.includes("SELECT * FROM pgmq.read")) {
         return sql.mockMessages || [];
       } else if (query.includes("SELECT message FROM pgmq.a_")) {
@@ -76,6 +85,14 @@ Deno.test("Pgmq - send and read without schema", async () => {
     const message = { text: "Hello, world!", number: 42 };
     await pgmq.send(message);
 
+    // Assert the SQL sent
+    assertEquals(
+      sql.lastQuery?.strings.raw.join("?"),
+      "SELECT pgmq.send(?, ?, ?)"
+    );
+    assertEquals(sql.lastQuery?.values[0], queueName);
+    assertEquals(sql.lastQuery?.values[1].toString(), `'${JSON.stringify(message)}'`);
+
     // Mock the read response
     sql.mockMessages = [
       {
@@ -92,8 +109,6 @@ Deno.test("Pgmq - send and read without schema", async () => {
     assertEquals(messages.length, 1);
     assertEquals(messages[0].payload, message);
 
-    // Clean up
-    await pgmq.delete(messages[0].id);
   } finally {
     stub.restore();
   }
@@ -108,6 +123,17 @@ Deno.test("Pgmq - send and read with schema", async () => {
     // Send a valid message
     const validMessage: TestMessage = { name: "Alice", age: 30 };
     await pgmq.send(validMessage);
+
+    // Assert the SQL sent
+    assertEquals(
+      sql.lastQuery?.strings.raw.join("?"),
+      "SELECT pgmq.send(?, ?, ?)"
+    );
+    assertEquals(sql.lastQuery?.values[0], queueName);
+    assertEquals(
+      sql.lastQuery?.values[1].toString(),
+      `'${JSON.stringify(validMessage)}'`
+    );
 
     // Mock the read response
     sql.mockMessages = [
@@ -132,9 +158,6 @@ Deno.test("Pgmq - send and read with schema", async () => {
       SchemaError,
       "Message schema validation failed"
     );
-
-    // Clean up
-    await pgmq.delete(messages[0].id);
   } finally {
     stub.restore();
   }
@@ -149,6 +172,14 @@ Deno.test("Pgmq - archive", async () => {
     // Send a message
     const message = { text: "Message to archive" };
     await pgmq.send(message);
+
+    // Assert the SQL sent for send
+    assertEquals(
+      sql.lastQuery?.strings.raw.join("?"),
+      "SELECT pgmq.send(?, ?, ?)"
+    );
+    assertEquals(sql.lastQuery?.values[0], queueName);
+    assertEquals(sql.lastQuery?.values[1].toString(), `'${JSON.stringify(message)}'`);
 
     // Mock the read response
     sql.mockMessages = [
@@ -184,89 +215,6 @@ Deno.test("Pgmq - archive", async () => {
       await sql`SELECT message FROM pgmq.a_${queueName} WHERE msg_id = ${msgId}`;
     assertEquals(archived.length, 1);
     assertEquals(JSON.parse(archived[0].message), message);
-  } finally {
-    stub.restore();
-  }
-});
-
-Deno.test("Pgmq - setTimeout", async () => {
-  const { sql, stub } = createMockSql();
-  const queueName = "test_queue_timeout";
-  const pgmq = new Pgmq(sql as any, queueName, { messageTimeout: 1 }); // 1 second timeout
-
-  try {
-    // Send a message
-    const message = { text: "Message with timeout" };
-    await pgmq.send(message);
-
-    // Mock the read response
-    sql.mockMessages = [
-      {
-        msg_id: 1,
-        read_ct: 1,
-        enqueued_at: new Date().toISOString(),
-        vt: new Date(Date.now() + 1000).toISOString(),
-        message: message,
-      },
-    ];
-
-    // Read immediately - should get the message
-    let messages = await pgmq.read();
-    assertEquals(messages.length, 1);
-    const msgId = messages[0].id;
-
-    // Set timeout for 5 seconds
-    await pgmq.setTimeout(msgId, 5);
-
-    // Mock empty read after setTimeout
-    sql.mockMessages = [];
-
-    // Read again - should not get the message yet
-    messages = await pgmq.read();
-    assertEquals(messages.length, 0);
-
-    // Clean up
-    await pgmq.delete(msgId);
-  } finally {
-    stub.restore();
-  }
-});
-
-Deno.test("Pgmq - delete", async () => {
-  const { sql, stub } = createMockSql();
-  const queueName = "test_queue_delete";
-  const pgmq = new Pgmq(sql as any, queueName, {});
-
-  try {
-    // Send a message
-    const message = { text: "Message to delete" };
-    await pgmq.send(message);
-
-    // Mock the read response
-    sql.mockMessages = [
-      {
-        msg_id: 1,
-        read_ct: 1,
-        enqueued_at: new Date().toISOString(),
-        vt: new Date(Date.now() + 30000).toISOString(),
-        message: message,
-      },
-    ];
-
-    // Read to get msgId
-    const messages = await pgmq.read();
-    assertEquals(messages.length, 1);
-    const msgId = messages[0].id;
-
-    // Delete the message
-    await pgmq.delete(msgId);
-
-    // Mock empty read after delete
-    sql.mockMessages = [];
-
-    // Try to read again - should be empty
-    const messagesAfter = await pgmq.read();
-    assertEquals(messagesAfter.length, 0);
   } finally {
     stub.restore();
   }

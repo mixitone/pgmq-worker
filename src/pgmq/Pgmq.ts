@@ -87,7 +87,7 @@ export class Pgmq<S extends z.ZodTypeAny | undefined = undefined> {
         throw new SchemaError(this.queueName, validatedMessage.error);
       }
 
-      const serialized = `'${JSON.stringify(validatedMessage)}'`;
+      const serialized = `'${JSON.stringify(validatedMessage.data)}'`;
       await this.sql`SELECT pgmq.send(${this.queueName}, ${this.sql.unsafe(
         serialized
       )}, ${delay})`;
