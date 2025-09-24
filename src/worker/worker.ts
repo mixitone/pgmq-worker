@@ -65,8 +65,8 @@ function getImportPath(queueName: string, queuesPath?: string) {
   // Sanitize queue name for valid filename (spaces and dashes to underscores)
   const sanitizedQueueName = queueName.replace(/\s\-/g, "_");
   return queuesPath
-    ? `${queuesPath}/${sanitizedQueueName}.ts`
-    : `${Deno.cwd()}/queues/${sanitizedQueueName}.ts`;
+    ? `file://${queuesPath}/${sanitizedQueueName}.ts`
+    : `file://${Deno.cwd()}/queues/${sanitizedQueueName}.ts`;
 }
 
 export function createWorker(
