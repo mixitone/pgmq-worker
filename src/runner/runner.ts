@@ -42,15 +42,7 @@ export async function startQueueRunner(options: QueueRunnerOptions) {
     },
   });
 
-  let busy = false;
   let shuttingDown = false;
-
-  pool.eventTarget?.addEventListener(PoolEvents.busy, () => {
-    busy = true;
-  });
-  pool.eventTarget?.addEventListener(PoolEvents.busyEnd, () => {
-    busy = false;
-  });
 
   await new Promise((resolve) => {
     const abortController = new AbortController();
@@ -75,13 +67,36 @@ export async function startQueueRunner(options: QueueRunnerOptions) {
   Deno.addSignalListener("SIGTERM", handleShutdown);
   Deno.addSignalListener("SIGINT", handleShutdown);
 
-  async function waitForReady() {
-    if (!busy) return;
-    await new Promise<void>((resolve) => {
-      const listener = () => {
-        resolve();
+  const eventTypes = Object.values(PoolEvents);
+
+  function waitForReady() {
+    return new Promise((resolve) => {
+      // If there's already an idle worker, resolve immediately
+      if (pool.info.idleWorkerNodes > 0) {
+        resolve(void 0);
+        return;
+      }
+
+      const abortController = new AbortController();
+
+      // Otherwise, wait for 'busyEnd' event (fired when a worker finishes and becomes idle)
+      const handler = (eventType: string) => {
+        if (pool.info.idleWorkerNodes > 0) {
+          console.info(`Worker idle after ${eventType}`);
+          abortController.abort();
+          resolve(void 0);
+        }
       };
-      pool.eventTarget?.addEventListener(PoolEvents.busyEnd, listener);
+
+      for (const eventType of eventTypes) {
+        pool.eventTarget?.addEventListener(
+          eventType,
+          () => handler(eventType),
+          {
+            signal: abortController.signal,
+          }
+        );
+      }
     });
   }
 
