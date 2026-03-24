@@ -80,6 +80,9 @@ export class Pgmq<S extends z.ZodTypeAny | undefined = undefined> {
     message: T,
     delay: number = 0
   ) {
+    const queueName = this.queueName;
+    const delaySeconds = Math.max(0, Math.trunc(delay));
+
     if ("schema" in this.options) {
       const validatedMessage = this.options.schema.safeParse(message);
 
@@ -87,15 +90,21 @@ export class Pgmq<S extends z.ZodTypeAny | undefined = undefined> {
         throw new SchemaError(this.queueName, validatedMessage.error);
       }
 
-      const serialized = `'${JSON.stringify(validatedMessage.data)}'`;
-      await this.sql`SELECT pgmq.send(${this.queueName}, ${this.sql.unsafe(
-        serialized
-      )}, ${delay})`;
+      const payloadJson = JSON.stringify(validatedMessage.data);
+      if (payloadJson === undefined) {
+        throw new Error("Failed to serialize queue payload");
+      }
+      await this.sql`
+        SELECT pgmq.send(${queueName}::text, ${payloadJson}::jsonb, ${delaySeconds}::integer)
+      `;
     } else {
-      const serialized = `'${JSON.stringify(message)}'`;
-      await this.sql`SELECT pgmq.send(${this.queueName}, ${this.sql.unsafe(
-        serialized
-      )}, ${delay})`;
+      const payloadJson = JSON.stringify(message);
+      if (payloadJson === undefined) {
+        throw new Error("Failed to serialize queue payload");
+      }
+      await this.sql`
+        SELECT pgmq.send(${queueName}::text, ${payloadJson}::jsonb, ${delaySeconds}::integer)
+      `;
     }
   }
 

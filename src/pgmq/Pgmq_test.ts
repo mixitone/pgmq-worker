@@ -19,7 +19,6 @@ type TestMessage = z.input<typeof testSchema>;
 // Mock SQL interface
 interface MockSql {
   (strings: TemplateStringsArray, ...values: any[]): Promise<any[]>;
-  unsafe: (str: string) => { toString(): string };
   mockMessages?: RawPgmqMessage[];
   mockArchived?: any[];
   lastQuery?: {
@@ -39,9 +38,7 @@ function createMockSql(): {
       sql.lastQuery = { strings, values };
       return [];
     },
-    {
-      unsafe: (str: string) => ({ toString: () => str }),
-    }
+    {}
   );
 
   const sqlObj = { sql };
@@ -67,11 +64,6 @@ function createMockSql(): {
   // Update sql to the stubbed version
   sql = sqlObj.sql;
 
-  // Re-assign the unsafe method and mock properties to the stubbed sql
-  Object.assign(sql, {
-    unsafe: (str: string) => ({ toString: () => str }),
-  });
-
   return { sql, stub: sqlStub };
 }
 
@@ -88,10 +80,11 @@ Deno.test("Pgmq - send and read without schema", async () => {
     // Assert the SQL sent
     assertEquals(
       sql.lastQuery?.strings.raw.join("?"),
-      "SELECT pgmq.send(?, ?, ?)"
+      "\n        SELECT pgmq.send(?::text, ?::jsonb, ?::integer)\n      "
     );
     assertEquals(sql.lastQuery?.values[0], queueName);
-    assertEquals(sql.lastQuery?.values[1].toString(), `'${JSON.stringify(message)}'`);
+    assertEquals(sql.lastQuery?.values[1], JSON.stringify(message));
+    assertEquals(sql.lastQuery?.values[2], 0);
 
     // Mock the read response
     sql.mockMessages = [
@@ -127,13 +120,11 @@ Deno.test("Pgmq - send and read with schema", async () => {
     // Assert the SQL sent
     assertEquals(
       sql.lastQuery?.strings.raw.join("?"),
-      "SELECT pgmq.send(?, ?, ?)"
+      "\n        SELECT pgmq.send(?::text, ?::jsonb, ?::integer)\n      "
     );
     assertEquals(sql.lastQuery?.values[0], queueName);
-    assertEquals(
-      sql.lastQuery?.values[1].toString(),
-      `'${JSON.stringify(validMessage)}'`
-    );
+    assertEquals(sql.lastQuery?.values[1], JSON.stringify(validMessage));
+    assertEquals(sql.lastQuery?.values[2], 0);
 
     // Mock the read response
     sql.mockMessages = [
@@ -176,10 +167,11 @@ Deno.test("Pgmq - archive", async () => {
     // Assert the SQL sent for send
     assertEquals(
       sql.lastQuery?.strings.raw.join("?"),
-      "SELECT pgmq.send(?, ?, ?)"
+      "\n        SELECT pgmq.send(?::text, ?::jsonb, ?::integer)\n      "
     );
     assertEquals(sql.lastQuery?.values[0], queueName);
-    assertEquals(sql.lastQuery?.values[1].toString(), `'${JSON.stringify(message)}'`);
+    assertEquals(sql.lastQuery?.values[1], JSON.stringify(message));
+    assertEquals(sql.lastQuery?.values[2], 0);
 
     // Mock the read response
     sql.mockMessages = [
@@ -249,6 +241,27 @@ Deno.test("Pgmq - read with invalid schema and onInvalid handler", async () => {
     const messages = await pgmq.read();
     assertEquals(messages.length, 0); // Invalid message not returned
     assertEquals(invalidHandled, true);
+  } finally {
+    stub.restore();
+  }
+});
+
+Deno.test("Pgmq - send handles apostrophes without unsafe SQL interpolation", async () => {
+  const { sql, stub } = createMockSql();
+  const queueName = "test_queue_escaping";
+  const pgmq = new Pgmq(sql as any, queueName, {});
+
+  try {
+    const message = { text: "don't break SQL", note: "O'Reilly" };
+    await pgmq.send(message, 3);
+
+    assertEquals(
+      sql.lastQuery?.strings.raw.join("?"),
+      "\n        SELECT pgmq.send(?::text, ?::jsonb, ?::integer)\n      "
+    );
+    assertEquals(sql.lastQuery?.values[0], queueName);
+    assertEquals(sql.lastQuery?.values[1], JSON.stringify(message));
+    assertEquals(sql.lastQuery?.values[2], 3);
   } finally {
     stub.restore();
   }

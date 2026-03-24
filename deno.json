@@ -1,6 +1,6 @@
 {
   "name": "@mixitone/pgmq-worker",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "exports": {
     ".": "./src/mod.ts"
   },
@@ -13,14 +13,10 @@
     "strict": true
   },
   "fmt": {
-    "files": {
-      "include": ["src/"]
-    }
+    "include": ["src/", "integration/"]
   },
   "lint": {
-    "files": {
-      "include": ["src/"]
-    },
+    "include": ["src/", "integration/"],
     "rules": {
       "tags": ["recommended"]
     }
@@ -29,6 +25,7 @@
     "test": "deno test",
     "fmt": "deno fmt",
     "lint": "deno lint",
-    "check": "deno check src/mod.ts"
+    "check": "deno check src/mod.ts integration/pgmq_send_integration.ts",
+    "integration:pgmq-send": "deno run --allow-env --allow-net integration/pgmq_send_integration.ts"
   }
 }
