@@ -31,9 +31,9 @@ async function main() {
 
   try {
     // Clean slate (ok if queue did not exist)
-    await sql`SELECT pgmq.drop_queue(${queueName})`;
+    await sql`SELECT pgmq.drop_queue(${queueName}::text)`;
 
-    await sql`SELECT pgmq.create(${queueName})`;
+    await sql`SELECT pgmq.create(${queueName}::text)`;
 
     const payloadJson = JSON.stringify(payload);
     await sql`
@@ -42,13 +42,14 @@ async function main() {
 
     const rows = await sql<
       { msg_id: number; message: unknown }[]
-    >`SELECT * FROM pgmq.read(${queueName}, ${30}, ${1})`;
+    >`SELECT * FROM pgmq.read(${queueName}::text, ${30}::integer, ${1}::integer)`;
 
     if (rows.length !== 1) {
       throw new Error(`expected 1 message, got ${rows.length}`);
     }
 
-    const got = rows[0].message;
+    const gotRaw = rows[0].message;
+    const got = typeof gotRaw === "string" ? JSON.parse(gotRaw) : gotRaw;
     const expected = payload;
     if (JSON.stringify(got) !== JSON.stringify(expected)) {
       throw new Error(
@@ -56,8 +57,8 @@ async function main() {
       );
     }
 
-    await sql`SELECT pgmq.delete(${queueName}, ${rows[0].msg_id})`;
-    await sql`SELECT pgmq.drop_queue(${queueName})`;
+    await sql`SELECT pgmq.delete(${queueName}::text, ${rows[0].msg_id}::bigint)`;
+    await sql`SELECT pgmq.drop_queue(${queueName}::text)`;
 
     console.log("OK: pgmq.send(text, jsonb, integer) round-trip succeeded");
   } finally {

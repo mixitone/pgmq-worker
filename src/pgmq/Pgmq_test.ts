@@ -246,6 +246,31 @@ Deno.test("Pgmq - read with invalid schema and onInvalid handler", async () => {
   }
 });
 
+Deno.test("Pgmq - read parses JSON string messages", async () => {
+  const { sql, stub } = createMockSql();
+  const queueName = "test_queue_string_message";
+  const pgmq = new Pgmq(sql as any, queueName, { schema: testSchema });
+
+  try {
+    const message: TestMessage = { name: "Alice", age: 30 };
+    sql.mockMessages = [
+      {
+        msg_id: 1,
+        read_ct: 1,
+        enqueued_at: new Date().toISOString(),
+        vt: new Date(Date.now() + 30000).toISOString(),
+        message: JSON.stringify(message),
+      },
+    ];
+
+    const messages = await pgmq.read();
+    assertEquals(messages.length, 1);
+    assertEquals(messages[0].payload, message);
+  } finally {
+    stub.restore();
+  }
+});
+
 Deno.test("Pgmq - send handles apostrophes without unsafe SQL interpolation", async () => {
   const { sql, stub } = createMockSql();
   const queueName = "test_queue_escaping";

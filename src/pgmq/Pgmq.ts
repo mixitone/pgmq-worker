@@ -31,6 +31,16 @@ export class SchemaError extends Error {
 export class Pgmq<S extends z.ZodTypeAny | undefined = undefined> {
   private sql: postgres.Sql;
 
+  private parseMessage(raw: RawPgmqMessage): RawPgmqMessage {
+    const message = raw.message;
+    if (typeof message !== "string") return raw;
+    try {
+      return { ...raw, message: JSON.parse(message) as unknown };
+    } catch {
+      return raw;
+    }
+  }
+
   constructor(
     connection: Connection,
     readonly queueName: string,
@@ -56,20 +66,21 @@ export class Pgmq<S extends z.ZodTypeAny | undefined = undefined> {
     const messages: PgmqMessage<T>[] = [];
 
     for (const rawMessage of rawMessages) {
+      const parsedMessage = this.parseMessage(rawMessage);
       if ("schema" in this.options) {
-        const message = this.options.schema.safeParse(rawMessage.message);
+        const message = this.options.schema.safeParse(parsedMessage.message);
         if (message.success) {
           messages.push(
-            new PgmqMessage<T>(this, { ...rawMessage, message: message.data })
+            new PgmqMessage<T>(this, { ...parsedMessage, message: message.data })
           );
         } else if (this.options.onInvalid) {
           // Automatically archive invalid messages
-          await this.options.onInvalid(rawMessage, message.error);
+          await this.options.onInvalid(parsedMessage, message.error);
         } else {
           throw new SchemaError(this.queueName, message.error);
         }
       } else {
-        messages.push(new PgmqMessage<T>(this, rawMessage));
+        messages.push(new PgmqMessage<T>(this, parsedMessage));
       }
     }
 
